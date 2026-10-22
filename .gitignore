@@ -1,0 +1,7 @@
+.venv/
+models/voices/*.onnx
+models/voices/*.json
+models/whisper/*/
+data/settings.json
+*.log
+__pycache__/

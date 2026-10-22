@@ -1,0 +1,19 @@
+{
+  "app_name": "Pip",
+  "theme": "pip",
+  "port": 8766,
+  "llm_backend": "ollama",
+  "ollama_url": "http://127.0.0.1:11434",
+  "openai_url": "http://127.0.0.1:1234/v1",
+  "model": "llama3.2:3b",
+  "models_to_install": ["llama3.2:3b", "llama3.2:1b"],
+  "whisper_model": "base.en",
+  "whisper_threads": 4,
+  "whisper_beam": 1,
+  "voice": "en_US-amy-medium",
+  "voices_to_install": ["en_US-amy-medium", "en_US-joe-medium", "en_GB-alba-medium"],
+  "speech_speed": 1.05,
+  "system_prompt": "You are Pip, a cheerful, friendly little voice assistant who lives on Chuck's Raspberry Pi 500. You are curious, kind and a bit playful. Keep answers short and easy to listen to, usually one to three sentences. If you're not sure about something, say so honestly.",
+  "max_history": 12,
+  "open_browser": true
+}

@@ -1,0 +1,49 @@
+PIP  -  offline voice chat for your Raspberry Pi 500
+=====================================================
+
+A cheerful little voice assistant that lives on your Pi. Talk through your
+headset; Pip listens, thinks and answers, all on the Pi with no internet.
+
+  Ears   : Whisper (base.en)
+  Brain  : Ollama with llama3.2:3b (llama3.2:1b included for quicker replies)
+  Voice  : Piper (Amy, Joe and Alba voices)
+
+Needs 64-bit Raspberry Pi OS. Plug in your USB headset before starting.
+
+
+SETUP (once, needs internet)
+----------------------------
+1. Unzip into your home folder:
+       unzip Pip.zip -d ~
+2. Run the installer in a terminal:
+       cd ~/Pip
+       ./install.sh
+   It installs Ollama, the speech libraries, voices and models (~3.5 GB).
+   Takes 10-20 minutes.
+3. Done. A Pip icon is on your desktop (and in the menu under Accessories).
+
+
+USING IT
+--------
+Double-click Pip. Click "Start talking" and allow the microphone.
+
+  Push to talk : hold SPACE (or the button), talk, let go
+  Hands-free   : just talk; Pip answers when you pause
+  Esc          : stop Pip mid-sentence
+  Typing       : the text box works too
+
+The gear menu lets you pick the headset mic and output, voice, speed,
+Hands-free sensitivity and Pip's personality.
+
+Speed tip: on a Pi, llama3.2:3b takes a few seconds to start answering.
+For snappier chat, choose llama3.2:1b in the model picker at the top.
+
+
+IF SOMETHING ISN'T WORKING
+--------------------------
+The dots at the top (Brain / Ears / Voice) go green when ready.
+  Brain red -> run:  sudo systemctl restart ollama
+  Ears/Voice -> run ./install.sh again to re-download the missing parts
+No sound? Right-click the speaker icon on the taskbar and pick your headset,
+or choose it in Pip's gear menu.
+What happened is logged in  ~/Pip/pip.log
