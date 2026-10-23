@@ -29,6 +29,7 @@
     <span class="dot" id="hBrain" title="AI model">Brain</span>
     <span class="dot" id="hEars" title="Speech recognition">Ears</span>
     <span class="dot" id="hVoice" title="Speech voice">Voice</span>
+    <span class="dot" id="hNet" style="display:none">Network</span>
   </div>
   <div class="top-actions">
     <select id="modelSel" title="AI model"></select>
@@ -143,6 +144,10 @@
   <label>How {{APP_NAME}} should act
     <textarea id="sysPrompt" rows="6"></textarea></label>
   <button class="btn-secondary" id="savePrompt">Save personality</button>
+  <p class="fine" id="promptNote"></p>
+
+  <h3>Use from other devices</h3>
+  <div id="shareBox"></div>
 
   <h3>About</h3>
   <p class="fine" id="about"></p>

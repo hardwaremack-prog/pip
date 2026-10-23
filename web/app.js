@@ -79,12 +79,25 @@
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
     return r.json();
   }
-  const saveSetting = (patch) => { Object.assign(settings, patch); api("/api/settings", patch).catch(() => {}); };
+  // The host computer saves settings for everyone; other devices keep their own in this browser
+  let isHost = true;
+  const DEVICE_KEYS = ["model", "voice", "speech_speed", "mode", "vad_threshold", "silence_ms", "speak_replies", "barge_in"];
+  function devicePrefs() { try { return JSON.parse(lsGet("vc_prefs", "{}")) || {}; } catch { return {}; } }
+  const saveSetting = (patch) => {
+    Object.assign(settings, patch);
+    if (isHost) { api("/api/settings", patch).catch(() => {}); return; }
+    const p = devicePrefs();
+    for (const k of Object.keys(patch)) if (DEVICE_KEYS.includes(k)) p[k] = patch[k];
+    lsSet("vc_prefs", JSON.stringify(p));
+  };
 
   // ---------------- Status / settings UI ----------------
   async function refreshStatus(first) {
     try { status = await api("/api/status"); } catch { return; }
-    if (first) settings = status.settings;
+    if (first) {
+      isHost = status.is_host !== false;
+      settings = isHost ? status.settings : { ...status.settings, ...devicePrefs() };
+    }
     const sel = $("modelSel");
     if (!switching) {
       const cur = settings.model;
@@ -107,6 +120,7 @@
     const vs = $("voiceSel");
     vs.innerHTML = (status.voices.length ? status.voices : ["(built-in)"]).map((v) =>
       `<option value="${esc(v)}" ${v === settings.voice ? "selected" : ""}>${esc(prettyVoice(v))}</option>`).join("");
+    renderShare();
     $("about").textContent = `Brain: ${status.backend === "openai" ? "LM Studio / OpenAI-style server" : "Ollama"} · Ears: Whisper ${status.whisper_model} · Voice: Piper. All offline.`;
     if (!status.whisper_ready && !status.whisper_error) setTimeout(() => refreshStatus(false), 2500);
   }
@@ -134,8 +148,8 @@
     sel.disabled = true;
     setState("thinking", `Switching to ${model}…`);
     try {
-      const r = await api("/api/model", { model });
-      settings.model = r.model;
+      const r = await api("/api/model", { model, previous: before });
+      saveSetting({ model: r.model });
       const secs = r.load_secs != null ? ` (ready in ${r.load_secs}s)` : "";
       addNote(`Switched brain: ${before} → ${r.model}${secs}`);
       setState("idle");
@@ -155,6 +169,19 @@
     return d;
   }
 
+  function renderShare() {
+    const box = $("shareBox");
+    if (!isHost) { box.innerHTML = `<p class="fine">You're connected over your home network. Your chats and settings stay in this browser.</p>`; return; }
+    if (status.share_error) { box.innerHTML = `<p class="fine">${esc(status.share_error)}</p>`; return; }
+    if (!(status.share_urls || []).length) { box.innerHTML = `<p class="fine">Network sharing is off. Turn it on with "share_on_network" in config.json.</p>`; return; }
+    box.innerHTML = `<p class="fine">On a phone, tablet or other computer on your Wi-Fi, open:</p>` +
+      status.share_urls.map((u) => `<div class="share-url">${esc(u)}</div>`).join("") +
+      `<p class="fine">The first time, the browser warns about the certificate. Choose <em>Advanced → Continue/Proceed</em> (on iPhone: <em>Show Details → visit this website</em>). That's expected: it's Halo's own private certificate. Each person gets their own chat.</p>`;
+    $("hNet").style.display = "";
+    $("hNet").className = "dot ok";
+    $("hNet").title = "Shared on your network: " + status.share_urls[0];
+  }
+
   function prettyVoice(v) {
     const m = v.match(/^([a-z]{2})_([A-Z]{2})-(.+)-(\w+)$/);
     if (!m) return v;
@@ -169,6 +196,11 @@
     $("thr").value = settings.vad_threshold || 0.02; $("thrVal").textContent = (+$("thr").value).toFixed(3);
     $("sil").value = settings.silence_ms || 900; $("silVal").textContent = (($("sil").value) / 1000).toFixed(1) + " s";
     $("sysPrompt").value = settings.system_prompt || "";
+    if (!isHost) {
+      $("sysPrompt").disabled = true;
+      $("savePrompt").style.display = "none";
+      $("promptNote").textContent = "Only the main computer can change the personality.";
+    }
     updateThrMarker();
     setMode(settings.mode || "ptt", false);
   }

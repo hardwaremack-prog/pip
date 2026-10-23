@@ -9,7 +9,10 @@ Pipeline:  headset mic -> browser -> /api/stt (faster-whisper)
 Everything runs on this machine. After setup, no internet is needed.
 """
 import io
+import ipaddress
 import json
+import socket
+import ssl
 import os
 import re
 import sys
@@ -61,6 +64,9 @@ DEFAULTS = {
     "system_prompt": "You are a helpful voice assistant. Keep replies short and conversational.",
     "max_history": 20,
     "open_browser": True,
+    "share_on_network": False,   # let other devices on the home network use it
+    "share_port": 8443,          # HTTPS port for other devices (mic needs HTTPS)
+    "unload_on_switch": True,    # free the old model's RAM when switching
 }
 for k, v in DEFAULTS.items():
     CONFIG.setdefault(k, v)
@@ -155,7 +161,16 @@ HALLUCINATIONS = {"", "you", "thank you.", "thanks for watching!", "thank you fo
                   "bye.", ".", "you.", "thank you", "[blank_audio]", "(silence)"}
 
 
+_stt_lock = threading.Lock()
+_tts_lock = threading.Lock()
+
+
 def transcribe(data: bytes) -> str:
+    with _stt_lock:
+        return _transcribe(data)
+
+
+def _transcribe(data: bytes) -> str:
     model = get_whisper()
     if model is None:
         raise RuntimeError("Speech recognizer not available: " + str(_whisper_err))
@@ -229,7 +244,7 @@ def synthesize(text: str, voice_name: str, speed: float) -> bytes:
     if not text:
         return b""
     buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
+    with _tts_lock, wave.open(buf, "wb") as wf:
         cfg = None
         try:
             from piper import SynthesisConfig
@@ -275,19 +290,20 @@ def running_models():
         return []
 
 
-def switch_model(new):
-    """Save the new model, free the old one from memory and load the new one."""
-    old = get_settings().get("model")
+def switch_model(new, old=None, is_host=True):
+    """Load the new model (and, on the host, save it and free the old one)."""
+    old = old or get_settings().get("model")
     models, err = list_models()
     if err:
         raise RuntimeError("Can't reach the AI model server. Is Ollama running?")
     if new not in models:
         raise RuntimeError(f"'{new}' isn't installed. Install it with: ollama pull {new}")
-    save_settings({"model": new})
+    if is_host:
+        save_settings({"model": new})
     secs = None
     if CONFIG["llm_backend"] == "ollama":
         base = CONFIG["ollama_url"].rstrip("/")
-        if old and old != new:
+        if is_host and CONFIG.get("unload_on_switch", True) and old and old != new:
             try:  # unload the old model so the two don't fight over RAM
                 http_json(base + "/api/generate", {"model": old, "keep_alive": 0, "stream": False}, timeout=30)
             except Exception:
@@ -402,13 +418,32 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)
+        if n > 20_000_000:
+            raise RuntimeError("Request too large")
         return self.rfile.read(n) if n else b""
 
-    # Only answer requests made to this computer's own address
+    @property
+    def is_host(self):
+        try:
+            return ipaddress.ip_address(self.client_address[0].split("%")[0]).is_loopback
+        except ValueError:
+            return False
+
+    # Answer this computer, and (when sharing) other devices on the home network only
     def _local_only(self):
-        host = (self.headers.get("Host") or "").split(":")[0]
-        if host not in ("127.0.0.1", "localhost"):
-            self._send(403, {"error": "local only"})
+        raw = self.headers.get("Host") or ""
+        if raw.startswith("["):                       # [ipv6]:port
+            host = raw[1:raw.find("]")]
+        else:
+            host = raw.rsplit(":", 1)[0] if raw.count(":") == 1 else raw
+        host = host.lower()
+        if self.is_host:
+            ok = host in ("127.0.0.1", "localhost", "::1") or host in NET["names"]
+        else:
+            ok = CONFIG.get("share_on_network") and is_private(self.client_address[0]) and (
+                host in NET["names"] or is_ip(host))
+        if not ok:
+            self._send(403, {"error": "Not allowed from here"})
             return False
         return True
 
@@ -436,6 +471,9 @@ class Handler(BaseHTTPRequestHandler):
                 "whisper_ready": _whisper is not None, "whisper_error": _whisper_err,
                 "piper_error": _piper_err, "settings": get_settings(),
                 "running": running_models(),
+                "is_host": self.is_host,
+                "share_urls": NET["urls"] if self.is_host else [],
+                "share_error": NET["error"] if self.is_host else None,
             })
         if path == "/api/settings":
             return self._send(200, get_settings())
@@ -458,12 +496,16 @@ class Handler(BaseHTTPRequestHandler):
                                  req.get("speed") or s["speech_speed"])
                 return self._send(200, wav, "audio/wav")
             if path == "/api/settings":
+                if not self.is_host:
+                    return self._send(403, {"error": "Only the host computer can change shared settings"})
                 return self._send(200, save_settings(json.loads(self._body() or b"{}")))
             if path == "/api/model":
                 req = json.loads(self._body() or b"{}")
-                return self._send(200, switch_model(req.get("model", "")))
+                return self._send(200, switch_model(req.get("model", ""), req.get("previous"), self.is_host))
             if path == "/api/chat":
                 return self._chat(json.loads(self._body() or b"{}"))
+        except (BrokenPipeError, ConnectionResetError):
+            return
         except Exception as e:  # noqa
             log("Error:", path, e)
             msg = str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}"
@@ -514,6 +556,114 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
 
+# --------------------------------------------------------------------------
+# Sharing on the home network
+# --------------------------------------------------------------------------
+NET = {"names": set(), "urls": [], "error": None}
+
+
+def is_ip(h):
+    try:
+        ipaddress.ip_address(h)
+        return True
+    except ValueError:
+        return False
+
+
+def is_private(ip):
+    try:
+        a = ipaddress.ip_address(ip.split("%")[0])
+        if getattr(a, "ipv4_mapped", None):
+            a = a.ipv4_mapped
+        return a.is_private or a.is_loopback or a.is_link_local
+    except ValueError:
+        return False
+
+
+def local_ips():
+    ips = set()
+    try:  # the address used to reach the router (no traffic is sent)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        ips.add(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except Exception:
+        pass
+    return sorted(i for i in ips if not i.startswith("127.") and is_private(i))
+
+
+def make_cert(cert_path: Path, key_path: Path, names, ips):
+    """Create a self-signed certificate so other devices can use the microphone."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    import datetime
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, CONFIG["app_name"])])
+    san = [x509.DNSName(n) for n in sorted(names)] + [x509.IPAddress(ipaddress.ip_address(i)) for i in ips]
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(subject).issuer_name(subject)
+            .public_key(key.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=3650))
+            .add_extension(x509.SubjectAlternativeName(san), critical=False)
+            .sign(key, hashes.SHA256()))
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+    key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM,
+                                           serialization.PrivateFormat.PKCS8,
+                                           serialization.NoEncryption()))
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (cert_path.parent / "cert_ips.json").write_text(json.dumps(ips))
+
+
+class QuietServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        e = sys.exc_info()[1]
+        if isinstance(e, (ssl.SSLError, ConnectionError, TimeoutError, OSError)):
+            return  # e.g. a browser closing the connection at the certificate warning
+        super().handle_error(request, client_address)
+
+
+def start_network_server():
+    host = socket.gethostname().lower()
+    NET["names"] = {host, host + ".local", "localhost"}
+    ips = local_ips()
+    port = int(CONFIG["share_port"])
+    data = HERE / "data"
+    cert, key = data / "cert.pem", data / "key.pem"
+    try:
+        old_ips = json.loads((data / "cert_ips.json").read_text()) if cert.exists() else None
+        if not cert.exists() or not key.exists() or set(old_ips or []) != set(ips):
+            log("Creating a security certificate for network use ...")
+            make_cert(cert, key, NET["names"], ips)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(str(cert), str(key))
+        srv = QuietServer(("0.0.0.0", port), Handler)
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True, do_handshake_on_connect=False)
+    except ImportError:
+        NET["error"] = "Network sharing needs the 'cryptography' package. Run the installer again."
+        log(NET["error"])
+        return
+    except OSError as e:
+        NET["error"] = f"Couldn't open port {port} for the network ({e})."
+        log(NET["error"])
+        return
+    NET["urls"] = [f"https://{i}:{port}/" for i in ips] + [f"https://{host}.local:{port}/"]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    log("Other devices on your network can use it at:")
+    for u in NET["urls"]:
+        log("   " + u)
+    log("(The first visit shows a certificate warning: choose Advanced -> Continue.)")
+
+
 def open_app_window(url):
     """Open in a clean app-style window if Chrome/Edge/Chromium is present."""
     candidates = []
@@ -544,12 +694,14 @@ def main():
     port = int(CONFIG["port"])
     url = f"http://127.0.0.1:{port}/"
     try:
-        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        httpd = QuietServer(("127.0.0.1", port), Handler)
     except OSError:
         log(f"{CONFIG['app_name']} already seems to be running - opening it.")
         open_app_window(url)
         return
     log(f"{CONFIG['app_name']} running at {url}")
+    if CONFIG.get("share_on_network"):
+        start_network_server()
     log("Close this window to quit.")
     threading.Thread(target=get_whisper, daemon=True).start()  # warm up
     if CONFIG.get("open_browser", True) and "--no-browser" not in sys.argv:

@@ -175,6 +175,7 @@ select { background: var(--panel); border: 1px solid var(--line); border-radius:
 .drawer .switch { flex-direction: row; align-items: center; gap: 10px; }
 .drawer input[type=range] { width: 100%; accent-color: var(--accent); }
 .val { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.share-url { font-family: ui-monospace, Consolas, monospace; font-size: 14px; padding: 8px 10px; margin: 6px 0; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); user-select: all; word-break: break-all; }
 .fine { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 4px 0; }
 .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 15; }
 .scrim.show { opacity: 1; pointer-events: auto; }
@@ -202,5 +203,6 @@ select { background: var(--panel); border: 1px solid var(--line); border-radius:
   .transcript { border-left: 0; border-top: 1px solid var(--line); padding: 14px; }
   .dock { grid-template-columns: 1fr 1fr; grid-template-areas: "mode talk" "type type" "hint hint"; }
   .health { display: none; }
-  .talk-btn { min-width: 0; }
+  .talk-btn { min-width: 0; padding: 12px 14px; white-space: nowrap; font-size: 15px; }
+  .mode-toggle button { padding: 8px 11px; font-size: 13px; }
 }
