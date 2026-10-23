@@ -88,6 +88,7 @@ select { background: var(--panel); border: 1px solid var(--line); border-radius:
 .msg.user { align-self: flex-end; background: var(--user-bubble); border-bottom-right-radius: 4px; }
 .msg.assistant { align-self: flex-start; background: var(--bot-bubble); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
 .theme-pip .msg.assistant { box-shadow: 0 2px 0 var(--line); }
+.msg.note { align-self: center; font-size: 13px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 6px 14px; }
 .msg.error { align-self: center; color: var(--danger); background: transparent; border: 1px dashed var(--danger); font-size: 14px; }
 .msg pre { background: rgba(0,0,0,.25); padding: 10px; border-radius: 8px; overflow-x: auto; white-space: pre; font-size: 13px; }
 .theme-pip .msg pre { background: #f4efe6; }

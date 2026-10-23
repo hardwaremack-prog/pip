@@ -264,6 +264,42 @@ def list_models():
         return [], f"{type(e).__name__}: {e}"
 
 
+def running_models():
+    """Models Ollama currently has loaded in memory."""
+    if CONFIG["llm_backend"] != "ollama":
+        return []
+    try:
+        d = http_json(CONFIG["ollama_url"].rstrip("/") + "/api/ps", timeout=3)
+        return [m["name"] for m in d.get("models", [])]
+    except Exception:
+        return []
+
+
+def switch_model(new):
+    """Save the new model, free the old one from memory and load the new one."""
+    old = get_settings().get("model")
+    models, err = list_models()
+    if err:
+        raise RuntimeError("Can't reach the AI model server. Is Ollama running?")
+    if new not in models:
+        raise RuntimeError(f"'{new}' isn't installed. Install it with: ollama pull {new}")
+    save_settings({"model": new})
+    secs = None
+    if CONFIG["llm_backend"] == "ollama":
+        base = CONFIG["ollama_url"].rstrip("/")
+        if old and old != new:
+            try:  # unload the old model so the two don't fight over RAM
+                http_json(base + "/api/generate", {"model": old, "keep_alive": 0, "stream": False}, timeout=30)
+            except Exception:
+                pass
+        t0 = time.time()
+        http_json(base + "/api/generate",
+                  {"model": new, "prompt": "", "keep_alive": "30m", "stream": False}, timeout=300)
+        secs = round(time.time() - t0, 1)
+    log(f"Switched model: {old} -> {new}" + (f" (loaded in {secs}s)" if secs is not None else ""))
+    return {"model": new, "previous": old, "load_secs": secs}
+
+
 def stream_chat(messages, model):
     """Yield text pieces from the local model."""
     if CONFIG["llm_backend"] == "openai":
@@ -399,6 +435,7 @@ class Handler(BaseHTTPRequestHandler):
                 "voices": list_voices(), "whisper_model": CONFIG["whisper_model"],
                 "whisper_ready": _whisper is not None, "whisper_error": _whisper_err,
                 "piper_error": _piper_err, "settings": get_settings(),
+                "running": running_models(),
             })
         if path == "/api/settings":
             return self._send(200, get_settings())
@@ -422,6 +459,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, wav, "audio/wav")
             if path == "/api/settings":
                 return self._send(200, save_settings(json.loads(self._body() or b"{}")))
+            if path == "/api/model":
+                req = json.loads(self._body() or b"{}")
+                return self._send(200, switch_model(req.get("model", "")))
             if path == "/api/chat":
                 return self._chat(json.loads(self._body() or b"{}"))
         except Exception as e:  # noqa
@@ -462,7 +502,7 @@ class Handler(BaseHTTPRequestHandler):
             tail = flt.flush()
             if tail:
                 emit({"t": tail})
-            emit({"done": True, "secs": round(time.time() - t0, 1)})
+            emit({"done": True, "model": model, "secs": round(time.time() - t0, 1)})
         except (BrokenPipeError, ConnectionResetError):
             log("Reply stopped (interrupted).")
         except urllib.error.URLError as e:

@@ -86,14 +86,18 @@
     try { status = await api("/api/status"); } catch { return; }
     if (first) settings = status.settings;
     const sel = $("modelSel");
-    const cur = settings.model;
-    const models = status.models.length ? status.models : [cur];
-    sel.innerHTML = models.map((m) => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
-    if (!models.includes(cur) && status.models.length) { sel.value = status.models[0]; saveSetting({ model: sel.value }); }
+    if (!switching) {
+      const cur = settings.model;
+      const models = status.models.length ? status.models : [cur];
+      sel.innerHTML = models.map((m) => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
+      if (!models.includes(cur) && status.models.length) { sel.value = status.models[0]; saveSetting({ model: sel.value }); }
+    }
 
     const dot = (id, cls, tip) => { const e = $(id); e.className = "dot " + cls; e.title = tip; };
+    const loaded = (status.running || []).length ? ` · in memory now: ${status.running.join(", ")}` : "";
     dot("hBrain", status.llm_error ? "bad" : (status.models.length ? "ok" : "wait"),
-      status.llm_error ? "AI model not reachable — is Ollama running?" : `${status.models.length} model(s) installed`);
+      status.llm_error ? "AI model not reachable — is Ollama running?" : `Using ${settings.model}${loaded}`);
+    $("hBrain").textContent = status.llm_error ? "Brain" : "Brain: " + shortModel(settings.model);
     dot("hEars", status.whisper_error ? "bad" : (status.whisper_ready ? "ok" : "wait"),
       status.whisper_error || (status.whisper_ready ? "Speech recognition ready (" + status.whisper_model + ")" : "Loading speech recognition…"));
     browserTTS = !status.voices.length || !!status.piper_error;
@@ -106,6 +110,51 @@
     $("about").textContent = `Brain: ${status.backend === "openai" ? "LM Studio / OpenAI-style server" : "Ollama"} · Ears: Whisper ${status.whisper_model} · Voice: Piper. All offline.`;
     if (!status.whisper_ready && !status.whisper_error) setTimeout(() => refreshStatus(false), 2500);
   }
+  // "llama3.2:1b" -> "1b",  "gemma3:27b" -> "gemma3 27b"
+  function shortModel(m) {
+    if (!m) return "?";
+    const [name, tag] = m.split(":");
+    if (/^llama3\.2$/i.test(name) && tag) return tag.toUpperCase();
+    return tag && tag !== "latest" ? `${name} ${tag}` : name;
+  }
+  // how the voice should say a model name
+  function spokenModel(m) {
+    return m.replace(/:latest$/, "").replace(/[:_\/-]+/g, " ")
+      .replace(/([a-z])(\d)/gi, "$1 $2").replace(/(\d)b\b/gi, "$1 B");
+  }
+
+  // Switch models and tell the user (on screen and out loud) when it's done
+  let switching = false;
+  async function switchModel(model) {
+    const sel = $("modelSel");
+    const before = settings.model;
+    if (!model || model === before) return;
+    stopReply();
+    switching = true;
+    sel.disabled = true;
+    setState("thinking", `Switching to ${model}…`);
+    try {
+      const r = await api("/api/model", { model });
+      settings.model = r.model;
+      const secs = r.load_secs != null ? ` (ready in ${r.load_secs}s)` : "";
+      addNote(`Switched brain: ${before} → ${r.model}${secs}`);
+      setState("idle");
+      if (ctx && settings.speak_replies !== false) queueSpeech(`Okay. I'm now using ${spokenModel(r.model)}.`, replyId);
+    } catch (err) {
+      sel.value = before;
+      showError(`Couldn't switch to ${model}: ${err.message}`);
+      setState(ctx ? "idle" : "off");
+    } finally {
+      switching = false;
+      sel.disabled = false;
+      refreshStatus(false);
+    }
+  }
+  function addNote(text) {
+    const d = addBubble("note", text);
+    return d;
+  }
+
   function prettyVoice(v) {
     const m = v.match(/^([a-z]{2})_([A-Z]{2})-(.+)-(\w+)$/);
     if (!m) return v;
@@ -308,7 +357,7 @@
     setState("thinking");
 
     const bubble = addBubble("assistant", "", "typing");
-    let full = "", pending = "";
+    let full = "", pending = "", usedModel = settings.model;
     const t0 = performance.now();
     chatAbort = new AbortController();
     try {
@@ -329,6 +378,7 @@
           if (!line.trim()) continue;
           const obj = JSON.parse(line);
           if (obj.error) throw new Error(obj.error);
+          if (obj.model) usedModel = obj.model;
           if (obj.t) {
             full += obj.t; pending += obj.t;
             bubble.innerHTML = render(full.replace(/^\s+/, ""));
@@ -340,7 +390,7 @@
       flushSentences(pending, true, myId);
       bubble.classList.remove("typing");
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
-      bubble.insertAdjacentHTML("beforeend", `<span class="meta">${esc(settings.model)} · ${secs}s</span>`);
+      bubble.insertAdjacentHTML("beforeend", `<span class="meta">answered by ${esc(usedModel)} · ${secs}s</span>`);
       full = full.trim();
       if (full) { messages.push({ role: "assistant", content: full }); saveHistory(); }
       if (!speakingQueued(myId)) setState("idle");
@@ -497,7 +547,7 @@
     sendMessage(t);
   };
   $("newChat").onclick = () => { stopReply(); messages = []; saveHistory(); renderHistory(); setState(ctx ? "idle" : "off"); };
-  $("modelSel").onchange = (e) => saveSetting({ model: e.target.value });
+  $("modelSel").onchange = (e) => switchModel(e.target.value);
 
   // ---------------- Drawer ----------------
   const openDrawer = () => { $("drawer").classList.add("open"); $("scrim").classList.add("show"); };
