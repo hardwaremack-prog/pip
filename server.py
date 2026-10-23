@@ -478,7 +478,7 @@ class Handler(BaseHTTPRequestHandler):
                 "is_host": self.is_host,
                 "share_urls": NET["urls"] if self.is_host else [],
                 "version": VERSION,
-                "can_update": bool(CONFIG.get("update_repo")) and os.name != "nt",
+                "can_update": updates_supported(),
                 "share_error": NET["error"] if self.is_host else None,
             })
         if path == "/api/settings":
@@ -737,22 +737,33 @@ def update_info():
             "available": bool(latest) and vtuple(latest) > vtuple(VERSION),
             "notes": UPDATE["notes"], "error": UPDATE["error"],
             "running": UPDATE["running"], "log": lines,
-            "supported": bool(CONFIG.get("update_repo")) and os.name != "nt"}
+            "supported": updates_supported()}
+
+
+def updates_supported():
+    script = "update.ps1" if os.name == "nt" else "update.sh"
+    return bool(CONFIG.get("update_repo")) and (HERE / script).exists()
 
 
 def run_update():
     if UPDATE["running"]:
         return
-    script = HERE / "update.sh"
-    if os.name == "nt" or not script.exists():
+    if not updates_supported():
         raise RuntimeError("Updating from inside the app isn't available here.")
     UPDATE["running"] = True
     UPDATE_LOG.parent.mkdir(parents=True, exist_ok=True)
     logf = open(UPDATE_LOG, "w", encoding="utf-8")
     log("Updating from GitHub ...")
-    # New session so the updater survives when it restarts this server
-    subprocess.Popen(["bash", str(script), "--restart"], cwd=str(HERE), stdout=logf,
-                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+    # Detached so the updater survives when it closes and restarts this server
+    if os.name == "nt":
+        cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", str(HERE / "update.ps1"), "-Restart"]
+        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen(cmd, cwd=str(HERE), stdout=logf, stderr=subprocess.STDOUT,
+                         stdin=subprocess.DEVNULL, creationflags=flags, close_fds=True)
+    else:
+        subprocess.Popen(["bash", str(HERE / "update.sh"), "--restart"], cwd=str(HERE), stdout=logf,
+                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
 
     def watch():
         time.sleep(600)

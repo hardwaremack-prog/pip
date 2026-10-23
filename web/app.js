@@ -192,7 +192,7 @@
     $("updRun").style.display = ready ? "" : "none";
     $("updNotes").style.display = ready && upd.notes ? "" : "none";
     $("updNotes").textContent = upd.notes || "";
-    $("updStatus").textContent = upd.running ? `Updating to ${upd.latest || "the newest version"}… don't close Pip.`
+    $("updStatus").textContent = upd.running ? `Updating to ${upd.latest || "the newest version"}… don't close ${APP}.`
       : upd.available ? `Version ${upd.latest} is ready (you have ${upd.version}). What's new:`
       : upd.error ? `You have version ${upd.version}. ${upd.error}`
       : upd.latest ? `You have the newest version (${upd.version}).`
@@ -212,7 +212,7 @@
     $("updRun").disabled = true;
     try { upd = await api("/api/update/run", {}); } catch (e) { $("updStatus").textContent = "Couldn't start the update: " + e.message; $("updRun").disabled = false; return; }
     upd.running = true; paintUpdate();
-    setState("thinking", "Updating Pip…");
+    setState("thinking", `Updating ${APP}…`);
     // Follow along; when the new version answers, reload into it
     updPoll = setInterval(async () => {
       try {
@@ -220,7 +220,7 @@
         if (st.version !== startVersion) { clearInterval(updPoll); $("updStatus").textContent = "Updated! Reloading…"; setTimeout(() => location.reload(), 600); return; }
         upd = await api("/api/update"); paintUpdate();
         if (!upd.running) { clearInterval(updPoll); $("updRun").disabled = false; setState(ctx ? "idle" : "off"); }
-      } catch { $("updStatus").textContent = "Restarting Pip…"; }
+      } catch { $("updStatus").textContent = `Restarting ${APP}…`; }
     }, 1200);
   };
 
