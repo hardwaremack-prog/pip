@@ -120,6 +120,7 @@
     const vs = $("voiceSel");
     vs.innerHTML = (status.voices.length ? status.voices : ["(built-in)"]).map((v) =>
       `<option value="${esc(v)}" ${v === settings.voice ? "selected" : ""}>${esc(prettyVoice(v))}</option>`).join("");
+    if (!status.version && !window.__staleWarned) { window.__staleWarned = true; showError(STALE_MSG); }
     renderShare();
     renderUpdate(status);
     if (startVersion && status.version && status.version !== startVersion) {
@@ -144,6 +145,8 @@
 
   // Switch models and tell the user (on screen and out loud) when it's done
   let switching = false;
+  const STALE_MSG = `${APP} was updated, but the old version is still running in the background. ` +
+    `Restart ${APP} (or the computer) to finish the update.`;
   async function switchModel(model) {
     const sel = $("modelSel");
     const before = settings.model;
@@ -161,7 +164,7 @@
       if (ctx && settings.speak_replies !== false) queueSpeech(`Okay. I'm now using ${spokenModel(r.model)}.`, replyId);
     } catch (err) {
       sel.value = before;
-      showError(`Couldn't switch to ${model}: ${err.message}`);
+      showError(/^not found$/i.test(err.message) ? STALE_MSG : `Couldn't switch to ${model}: ${err.message}`);
       setState(ctx ? "idle" : "off");
     } finally {
       switching = false;
