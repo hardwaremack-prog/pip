@@ -103,11 +103,22 @@ def get_whisper(check=False):
     if check:
         say(f"  ✗ speech recognizer {name} missing", RED)
         return False
+    say(f"  ↓ speech recognizer {name}")
+    dest.mkdir(parents=True, exist_ok=True)
+    # Same files faster-whisper would fetch, but with a progress bar and retries
+    base = f"https://huggingface.co/Systran/faster-whisper-{name}/resolve/main/"
+    try:
+        for f in ("config.json", "tokenizer.json", "vocabulary.txt", "model.bin"):
+            if not (dest / f).exists():
+                say(f"    {f}", DIM)
+                download(base + f + "?download=true", dest / f)
+        say(f"  ✓ speech recognizer {name}", GREEN)
+        return True
+    except Exception as e:  # noqa
+        say(f"    (trying another way: {e})", DIM)
     try:
         os.environ.pop("HF_HUB_OFFLINE", None)
         from faster_whisper.utils import download_model
-        say(f"  ↓ speech recognizer {name} (this can take a few minutes)")
-        dest.mkdir(parents=True, exist_ok=True)
         download_model(name, output_dir=str(dest))
         say(f"  ✓ speech recognizer {name}", GREEN)
         return True

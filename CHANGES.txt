@@ -1,3 +1,7 @@
+1.4.2  (October 23, 2026)
+- The speech recognizer download also shows a progress bar and retries now
+  (it could sit silently on some Pis)
+
 1.4.1  (October 23, 2026)
 - Setup no longer sits silently on a slow or stuck download: it shows a progress bar,
   retries, and switches to IPv4 if the connection stalls (fixes hangs on some Pis)
