@@ -32,6 +32,7 @@
     <span class="dot" id="hNet" style="display:none">Network</span>
   </div>
   <div class="top-actions">
+    <button class="update-chip" id="updChip" style="display:none" title="A newer version is ready">Update available</button>
     <select id="modelSel" title="AI model"></select>
     <button class="icon-btn" id="newChat" title="New chat">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
@@ -148,6 +149,17 @@
 
   <h3>Use from other devices</h3>
   <div id="shareBox"></div>
+
+  <div id="updSection" style="display:none">
+    <h3>Updates</h3>
+    <p class="fine" id="updStatus"></p>
+    <pre class="upd-notes" id="updNotes" style="display:none"></pre>
+    <div class="upd-actions">
+      <button class="btn-secondary" id="updCheck">Check for updates</button>
+      <button class="btn-primary" id="updRun" style="display:none">Update now</button>
+    </div>
+    <pre class="upd-log" id="updLog" style="display:none"></pre>
+  </div>
 
   <h3>About</h3>
   <p class="fine" id="about"></p>

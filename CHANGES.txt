@@ -1,0 +1,11 @@
+1.2.0  (October 22, 2026)
+- Easy updates: "Update now" in the gear menu, an "Update Pip" desktop icon, or ./update.sh
+- Pip lets you know when a newer version is out
+- Your models, voices, settings and chats are kept when updating
+
+1.1.0  (October 22, 2026)
+- Switching models now confirms on screen and out loud
+- The top bar shows which brain is in use; each reply shows the model that answered
+
+1.0.0  (October 22, 2026)
+- First release

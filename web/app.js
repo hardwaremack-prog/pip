@@ -121,6 +121,11 @@
     vs.innerHTML = (status.voices.length ? status.voices : ["(built-in)"]).map((v) =>
       `<option value="${esc(v)}" ${v === settings.voice ? "selected" : ""}>${esc(prettyVoice(v))}</option>`).join("");
     renderShare();
+    renderUpdate(status);
+    if (startVersion && status.version && status.version !== startVersion) {
+      stopReply(); location.reload(); return;   // updated in the background
+    }
+    if (!startVersion) startVersion = status.version;
     $("about").textContent = `Brain: ${status.backend === "openai" ? "LM Studio / OpenAI-style server" : "Ollama"} · Ears: Whisper ${status.whisper_model} · Voice: Piper. All offline.`;
     if (!status.whisper_ready && !status.whisper_error) setTimeout(() => refreshStatus(false), 2500);
   }
@@ -168,6 +173,56 @@
     const d = addBubble("note", text);
     return d;
   }
+
+  // ---------------- Updates ----------------
+  let startVersion = null, upd = null, updPoll = null;
+  async function loadUpdate(check) {
+    try { upd = check ? await api("/api/update/check", {}) : await api("/api/update"); } catch { return; }
+    paintUpdate();
+  }
+  function renderUpdate(st) {
+    const show = st.can_update && isHost;
+    $("updSection").style.display = show ? "" : "none";
+    if (show && !updPoll) loadUpdate(false);
+  }
+  function paintUpdate() {
+    if (!upd) return;
+    const ready = upd.available && !upd.running;
+    $("updChip").style.display = ready ? "" : "none";
+    $("updRun").style.display = ready ? "" : "none";
+    $("updNotes").style.display = ready && upd.notes ? "" : "none";
+    $("updNotes").textContent = upd.notes || "";
+    $("updStatus").textContent = upd.running ? `Updating to ${upd.latest || "the newest version"}… don't close Pip.`
+      : upd.available ? `Version ${upd.latest} is ready (you have ${upd.version}). What's new:`
+      : upd.error ? `You have version ${upd.version}. ${upd.error}`
+      : upd.latest ? `You have the newest version (${upd.version}).`
+      : `You have version ${upd.version}.`;
+    $("updLog").style.display = upd.log && upd.log.length ? "" : "none";
+    $("updLog").textContent = (upd.log || []).join("\n");
+    $("updLog").scrollTop = 1e9;
+  }
+  $("updChip").onclick = () => { openDrawer(); $("updSection").scrollIntoView({ block: "start" }); };
+  $("updCheck").onclick = async () => {
+    $("updCheck").disabled = true; $("updStatus").textContent = "Checking GitHub…";
+    await loadUpdate(true);
+    $("updCheck").disabled = false;
+  };
+  $("updRun").onclick = async () => {
+    stopReply();
+    $("updRun").disabled = true;
+    try { upd = await api("/api/update/run", {}); } catch (e) { $("updStatus").textContent = "Couldn't start the update: " + e.message; $("updRun").disabled = false; return; }
+    upd.running = true; paintUpdate();
+    setState("thinking", "Updating Pip…");
+    // Follow along; when the new version answers, reload into it
+    updPoll = setInterval(async () => {
+      try {
+        const st = await api("/api/status");
+        if (st.version !== startVersion) { clearInterval(updPoll); $("updStatus").textContent = "Updated! Reloading…"; setTimeout(() => location.reload(), 600); return; }
+        upd = await api("/api/update"); paintUpdate();
+        if (!upd.running) { clearInterval(updPoll); $("updRun").disabled = false; setState(ctx ? "idle" : "off"); }
+      } catch { $("updStatus").textContent = "Restarting Pip…"; }
+    }, 1200);
+  };
 
   function renderShare() {
     const box = $("shareBox");

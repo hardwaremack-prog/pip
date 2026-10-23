@@ -10,4 +10,4 @@ if ! curl -s http://127.0.0.1:11434/api/tags >/dev/null; then
   (ollama serve >/dev/null 2>&1 &)
   sleep 2
 fi
-exec .venv/bin/python server.py >> pip.log 2>&1
+exec .venv/bin/python server.py "$@" >> pip.log 2>&1

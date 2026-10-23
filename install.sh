@@ -41,25 +41,14 @@ g "[3/5] Pip's Python environment ..."
 g "[4/5] Voices, speech recognizer and AI models (a few GB) ..."
 .venv/bin/python setup_models.py || true
 
-g "[5/5] Desktop and menu shortcut ..."
-chmod +x "$HERE/pip.sh"
-DESKTOP_FILE="[Desktop Entry]
-Type=Application
-Name=Pip
-Comment=Offline voice chat
-Exec=$HERE/pip.sh
-Path=$HERE
-Icon=$HERE/web/icon.png
-Terminal=false
-Categories=Utility;"
-mkdir -p "$HOME/.local/share/applications"
-echo "$DESKTOP_FILE" > "$HOME/.local/share/applications/pip-voice.desktop"
-DESK="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
-mkdir -p "$DESK"
-echo "$DESKTOP_FILE" > "$DESK/Pip.desktop"
-chmod +x "$DESK/Pip.desktop"
-gio set "$DESK/Pip.desktop" metadata::trusted true 2>/dev/null || true
+g "[5/5] Desktop and menu shortcuts ..."
+chmod +x "$HERE"/*.sh
+"$HERE/shortcuts.sh"
+mkdir -p data
+sha1sum requirements.txt | cut -d' ' -f1 > data/requirements.sha1
+cp config.json data/config.defaults.json
 
 echo
 g "Done! Double-click Pip on your desktop (or find it in the menu under Accessories)."
+g "To get new versions later: click Update now in Pip's gear menu, or the Update Pip icon."
 echo

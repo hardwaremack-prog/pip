@@ -39,6 +39,21 @@ Speed tip: on a Pi, llama3.2:3b takes a few seconds to start answering.
 For snappier chat, choose llama3.2:1b in the model picker at the top.
 
 
+GETTING UPDATES
+---------------
+Pip checks GitHub when it starts (if the Pi is online) and shows an
+"Update available" button at the top when there's something new.
+
+Three easy ways to update - pick any:
+  1. In Pip: gear menu -> Updates -> "Update now"
+  2. Double-click the "Update Pip" icon on the desktop
+  3. In a terminal:  ~/Pip/update.sh
+
+Your AI models, voices, settings, chats and config.json changes are kept.
+If Pip is running it restarts by itself and the window reloads.
+Updating needs internet; Pip itself stays fully offline.
+
+
 IF SOMETHING ISN'T WORKING
 --------------------------
 The dots at the top (Brain / Ears / Voice) go green when ready.

@@ -17,6 +17,19 @@ cd ~/Pip
 ```
 Needs internet once (~3.5 GB). Then use the **Pip** icon on the desktop or in the menu.
 
+## Updating
+Pip tells you when a new version is out. Update with any of:
+- **Gear menu → Updates → Update now**
+- the **Update Pip** icon on the desktop
+- `~/Pip/update.sh`
+
+Models, voices, settings, chats and your `config.json` changes are kept. Pip restarts itself.
+
+**First time on an older Pip** (before 1.2.0), run once:
+```bash
+cd ~/Pip && curl -fsSL https://raw.githubusercontent.com/hardwaremack-prog/pip/main/update.sh | bash
+```
+
 ## Use
 - Hold **Space** (or the button) to talk, or switch to **Hands-free** and just talk.
 - **Esc** stops Pip mid-sentence. The gear menu sets mic, voice, speed and sensitivity.

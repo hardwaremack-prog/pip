@@ -48,6 +48,10 @@ def load_json(path, default):
 
 
 CONFIG = load_json(CONFIG_PATH, {})
+try:
+    VERSION = (HERE / "VERSION").read_text(encoding="utf-8").strip()
+except OSError:
+    VERSION = "1.0.0"
 DEFAULTS = {
     "app_name": "Voice Chat",
     "theme": "halo",
@@ -473,10 +477,14 @@ class Handler(BaseHTTPRequestHandler):
                 "running": running_models(),
                 "is_host": self.is_host,
                 "share_urls": NET["urls"] if self.is_host else [],
+                "version": VERSION,
+                "can_update": bool(CONFIG.get("update_repo")) and os.name != "nt",
                 "share_error": NET["error"] if self.is_host else None,
             })
         if path == "/api/settings":
             return self._send(200, get_settings())
+        if path == "/api/update":
+            return self._send(200, update_info())
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -499,6 +507,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not self.is_host:
                     return self._send(403, {"error": "Only the host computer can change shared settings"})
                 return self._send(200, save_settings(json.loads(self._body() or b"{}")))
+            if path == "/api/update/check":
+                check_update(force=True)
+                return self._send(200, update_info())
+            if path == "/api/update/run":
+                if not self.is_host:
+                    return self._send(403, {"error": "Only the main computer can update"})
+                run_update()
+                return self._send(200, update_info())
             if path == "/api/model":
                 req = json.loads(self._body() or b"{}")
                 return self._send(200, switch_model(req.get("model", ""), req.get("previous"), self.is_host))
@@ -664,6 +680,86 @@ def start_network_server():
     log("(The first visit shows a certificate warning: choose Advanced -> Continue.)")
 
 
+# --------------------------------------------------------------------------
+# Updates from GitHub
+# --------------------------------------------------------------------------
+UPDATE = {"latest": None, "notes": "", "checked": 0.0, "error": None, "running": False}
+UPDATE_LOG = HERE / "data" / "update.log"
+
+
+def vtuple(v):
+    try:
+        return tuple(int(x) for x in re.findall(r"\d+", v)[:3])
+    except Exception:
+        return (0,)
+
+
+def notes_since(changes, current):
+    """The parts of CHANGES.txt that are newer than this copy."""
+    out = []
+    for block in re.split(r"\n(?=\d+\.\d+\.\d+)", changes.strip()):
+        m = re.match(r"(\d+\.\d+\.\d+)", block)
+        if m and vtuple(m.group(1)) <= vtuple(current):
+            break
+        out.append(block.strip())
+    return "\n\n".join(out)
+
+
+def check_update(force=False):
+    repo = CONFIG.get("update_repo")
+    if not repo or (not force and time.time() - UPDATE["checked"] < 3600):
+        return
+    UPDATE["checked"] = time.time()
+    base = f"https://raw.githubusercontent.com/{repo}/main/"
+    try:
+        stamp = f"?t={int(time.time())}"
+        with urllib.request.urlopen(base + "VERSION" + stamp, timeout=8) as r:
+            latest = r.read().decode().strip()
+        notes = ""
+        try:
+            with urllib.request.urlopen(base + "CHANGES.txt" + stamp, timeout=8) as r:
+                notes = notes_since(r.read().decode(), VERSION)
+        except Exception:
+            pass
+        UPDATE.update(latest=latest, notes=notes, error=None)
+        if vtuple(latest) > vtuple(VERSION):
+            log(f"Update available: {VERSION} -> {latest}")
+    except Exception:
+        UPDATE["error"] = "Couldn't reach GitHub. Updates need the internet."
+
+
+def update_info():
+    lines = []
+    if UPDATE_LOG.exists() and (UPDATE["running"] or time.time() - UPDATE_LOG.stat().st_mtime < 600):
+        lines = UPDATE_LOG.read_text(encoding="utf-8", errors="ignore").splitlines()[-40:]
+    latest = UPDATE["latest"]
+    return {"version": VERSION, "latest": latest,
+            "available": bool(latest) and vtuple(latest) > vtuple(VERSION),
+            "notes": UPDATE["notes"], "error": UPDATE["error"],
+            "running": UPDATE["running"], "log": lines,
+            "supported": bool(CONFIG.get("update_repo")) and os.name != "nt"}
+
+
+def run_update():
+    if UPDATE["running"]:
+        return
+    script = HERE / "update.sh"
+    if os.name == "nt" or not script.exists():
+        raise RuntimeError("Updating from inside the app isn't available here.")
+    UPDATE["running"] = True
+    UPDATE_LOG.parent.mkdir(parents=True, exist_ok=True)
+    logf = open(UPDATE_LOG, "w", encoding="utf-8")
+    log("Updating from GitHub ...")
+    # New session so the updater survives when it restarts this server
+    subprocess.Popen(["bash", str(script), "--restart"], cwd=str(HERE), stdout=logf,
+                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+
+    def watch():
+        time.sleep(600)
+        UPDATE["running"] = False  # gave up waiting; normally we've been restarted by now
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def open_app_window(url):
     """Open in a clean app-style window if Chrome/Edge/Chromium is present."""
     candidates = []
@@ -699,7 +795,9 @@ def main():
         log(f"{CONFIG['app_name']} already seems to be running - opening it.")
         open_app_window(url)
         return
-    log(f"{CONFIG['app_name']} running at {url}")
+    log(f"{CONFIG['app_name']} {VERSION} running at {url}")
+    if CONFIG.get("update_repo"):
+        threading.Thread(target=check_update, daemon=True).start()
     if CONFIG.get("share_on_network"):
         start_network_server()
     log("Close this window to quit.")
