@@ -226,6 +226,7 @@
 
   function renderShare() {
     const box = $("shareBox");
+    $("shareSection").style.display = (isHost && !(status.share_urls || []).length && !status.share_error) ? "none" : "";
     if (!isHost) { box.innerHTML = `<p class="fine">You're connected over your home network. Your chats and settings stay in this browser.</p>`; return; }
     if (status.share_error) { box.innerHTML = `<p class="fine">${esc(status.share_error)}</p>`; return; }
     if (!(status.share_urls || []).length) { box.innerHTML = `<p class="fine">Network sharing is off. Turn it on with "share_on_network" in config.json.</p>`; return; }
