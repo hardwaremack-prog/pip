@@ -507,6 +507,15 @@ class Handler(BaseHTTPRequestHandler):
                 if not self.is_host:
                     return self._send(403, {"error": "Only the host computer can change shared settings"})
                 return self._send(200, save_settings(json.loads(self._body() or b"{}")))
+            if path == "/api/export":
+                req = json.loads(self._body() or b"{}")
+                if self.is_host:
+                    return self._send(200, export_document(req.get("title", ""), req.get("html", "")))
+                pdf = render_pdf(req.get("html", ""))      # other devices get a download instead
+                if pdf:
+                    return self._send(200, pdf, "application/pdf",
+                                      {"Content-Disposition": 'attachment; filename="document.pdf"'})
+                return self._send(200, req.get("html", ""), "text/html; charset=utf-8")
             if path == "/api/update/check":
                 check_update(force=True)
                 return self._send(200, update_info())
@@ -532,14 +541,24 @@ class Handler(BaseHTTPRequestHandler):
         s = get_settings()
         model = req.get("model") or s["model"]
         history = req.get("messages") or []
-        history = history[-int(CONFIG["max_history"]):]
-        system = (s.get("system_prompt") or CONFIG["system_prompt"]).strip()
-        system += ("\n\nYour words are read aloud through a headset, so answer in plain spoken "
-                   "sentences: no markdown, no bullet lists, no emoji, unless the user asks for "
-                   "code or a list on screen.")
-        messages = [{"role": "system", "content": system}] + [
-            {"role": m["role"], "content": m["content"]} for m in history
-            if m.get("role") in ("user", "assistant") and m.get("content")]
+        if req.get("raw"):
+            # Used for writing documents: the app supplies the whole prompt itself
+            messages = [{"role": m["role"], "content": m["content"]} for m in history
+                        if m.get("role") in ("system", "user", "assistant") and m.get("content")]
+        else:
+            history = history[-int(CONFIG["max_history"]):]
+            system = (s.get("system_prompt") or CONFIG["system_prompt"]).strip()
+            system += ("\n\nYour words are read aloud through a headset, so answer in plain spoken "
+                       "sentences: no markdown, no bullet lists, no emoji, unless the user asks for "
+                       "code or a list on screen."
+                       "\n\nBe honest about what you can do: you can only talk. You cannot save, create, "
+                       "open, send or print files, set reminders, browse the web or do anything on the "
+                       "computer. Never claim or pretend you did any of those things. If the user wants "
+                       "the conversation as a document or PDF, tell them to say \"make a PDF\" or tap "
+                       "the document button at the top, and the app will write it up and save it.")
+            messages = [{"role": "system", "content": system}] + [
+                {"role": m["role"], "content": m["content"]} for m in history
+                if m.get("role") in ("user", "assistant") and m.get("content")]
 
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
@@ -769,6 +788,93 @@ def run_update():
         time.sleep(600)
         UPDATE["running"] = False  # gave up waiting; normally we've been restarted by now
     threading.Thread(target=watch, daemon=True).start()
+
+
+# --------------------------------------------------------------------------
+# Saving documents (PDF via the computer's own Edge/Chrome/Chromium)
+# --------------------------------------------------------------------------
+def documents_dir() -> Path:
+    if os.name == "nt":
+        try:  # the real Documents folder, even when OneDrive moved it
+            import ctypes
+            from ctypes import wintypes
+            buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:
+                return Path(buf.value)
+        except Exception:
+            pass
+    d = Path.home() / "Documents"
+    return d if d.exists() else Path.home()
+
+
+def browser_candidates():
+    c = []
+    if sys.platform.startswith("win"):
+        for base in (os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                     os.environ.get("ProgramFiles", r"C:\Program Files"),
+                     os.environ.get("LOCALAPPDATA", "")):
+            c += [os.path.join(base, r"Microsoft\Edge\Application\msedge.exe"),
+                  os.path.join(base, r"Google\Chrome\Application\chrome.exe")]
+    else:
+        for n in ("chromium-browser", "chromium", "google-chrome", "microsoft-edge"):
+            p = shutil.which(n)
+            if p:
+                c.append(p)
+    return [x for x in c if x and os.path.exists(x)]
+
+
+def render_pdf(html: str):
+    """Turn an HTML page into PDF bytes with a headless browser. None if not possible."""
+    import tempfile
+    for exe in browser_candidates():
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "doc.html"
+            out = Path(tmp) / "doc.pdf"
+            src.write_text(html, encoding="utf-8")
+            cmd = [exe, "--headless=new", "--disable-gpu", "--no-first-run", "--no-pdf-header-footer",
+                   "--print-to-pdf-no-header", f"--user-data-dir={Path(tmp) / 'profile'}",
+                   f"--print-to-pdf={out}", src.as_uri()]
+            if hasattr(os, "geteuid") and os.geteuid() == 0:
+                cmd.insert(1, "--no-sandbox")   # Chrome refuses to run as root otherwise
+            try:
+                subprocess.run(cmd, timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:  # noqa
+                log("PDF maker failed:", e)
+                continue
+            if out.exists() and out.stat().st_size > 500:
+                return out.read_bytes()
+    return None
+
+
+def open_file(path: Path):
+    try:
+        if os.name == "nt":
+            os.startfile(str(path))  # noqa
+        else:
+            subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+def export_document(title: str, html: str):
+    if not html:
+        raise RuntimeError("Nothing to save")
+    folder = documents_dir() / CONFIG["app_name"]
+    folder.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "", title or "").strip(" .")[:80] or "Conversation"
+    base = folder / f"{safe} ({time.strftime('%Y-%m-%d %H%M')})"
+    pdf = render_pdf(html)
+    if pdf:
+        path = base.with_suffix(".pdf")
+        path.write_bytes(pdf)
+        kind = "pdf"
+    else:  # no browser to make a PDF: save a page that can be printed to PDF
+        path = base.with_suffix(".html")
+        path.write_text(html, encoding="utf-8")
+        kind = "html"
+    log(f"Saved document: {path}")
+    open_file(path)
+    return {"path": str(path), "folder": str(folder), "kind": kind}
 
 
 def open_app_window(url):

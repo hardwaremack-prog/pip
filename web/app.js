@@ -439,7 +439,17 @@
   }
 
   // ---------------- Chat + speech ----------------
+  // "Make a PDF of this", "save that as a document", ...
+  const DOC_ASK = /\b(make|create|save|put|turn|give|provide|export|write|print|generate|compile)\b[^.?!]{0,80}\b(pdf|document|doc|write-?up|report)\b|\b(pdf|document)\b[^.?!]{0,40}\b(of|from) (this|that|it|our|the)\b/i;
+
   async function sendMessage(text) {
+    if (DOC_ASK.test(text) && messages.some((m) => m.role === "assistant")) {
+      stopReply();
+      addBubble("user", text);
+      messages.push({ role: "user", content: text });
+      saveHistory();
+      return makeDocument("writeup", text);
+    }
     stopReply();
     const myId = ++replyId;
     messages.push({ role: "user", content: text });
@@ -637,6 +647,135 @@
     $("typeBox").blur();
     sendMessage(t);
   };
+  // ---------------- Documents (real PDFs) ----------------
+  $("docBtn").onclick = (e) => { e.stopPropagation(); $("docMenu").classList.toggle("open"); };
+  document.addEventListener("click", () => $("docMenu").classList.remove("open"));
+  $("docWrite").onclick = () => makeDocument("writeup");
+  $("docChat").onclick = () => makeDocument("transcript");
+
+  function mdToHtml(md) {
+    const lines = md.replace(/\r/g, "").split("\n");
+    let html = "", list = null, para = [];
+    const inline = (t) => esc(t).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>").replace(/`([^`]+)`/g, "<code>$1</code>");
+    const flushP = () => { if (para.length) { html += `<p>${inline(para.join(" "))}</p>`; para = []; } };
+    const flushL = () => { if (list) { html += `</${list}>`; list = null; } };
+    for (const raw of lines) {
+      const l = raw.trim();
+      let m;
+      if (!l) { flushP(); flushL(); continue; }
+      if ((m = l.match(/^(#{1,4})\s+(.*)$/))) { flushP(); flushL(); const n = Math.min(4, m[1].length); html += `<h${n}>${inline(m[2])}</h${n}>`; continue; }
+      if ((m = l.match(/^[-*•]\s+(.*)$/))) { flushP(); if (list !== "ul") { flushL(); html += "<ul>"; list = "ul"; } html += `<li>${inline(m[1])}</li>`; continue; }
+      if ((m = l.match(/^\d+[.)]\s+(.*)$/))) { flushP(); if (list !== "ol") { flushL(); html += "<ol>"; list = "ol"; } html += `<li>${inline(m[1])}</li>`; continue; }
+      if (/^(-{3,}|_{3,}|\*{3,})$/.test(l)) { flushP(); flushL(); html += "<hr>"; continue; }
+      flushL(); para.push(l);
+    }
+    flushP(); flushL();
+    return html;
+  }
+
+  function docPage(title, bodyHtml, subtitle) {
+    const date = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+      @page { size: Letter; margin: 0.9in 0.85in; }
+      body { font-family: Georgia, "Times New Roman", serif; color: #1d2230; font-size: 11.5pt; line-height: 1.55; }
+      header { border-bottom: 2px solid #2a6f86; padding-bottom: 10px; margin-bottom: 22px; }
+      header .t { font-family: "Segoe UI", Helvetica, Arial, sans-serif; font-size: 24pt; font-weight: 700; color: #12384a; margin: 0; line-height: 1.2; }
+      header .s { font-family: "Segoe UI", Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #6b7280; margin-top: 6px; }
+      h1, h2, h3, h4 { font-family: "Segoe UI", Helvetica, Arial, sans-serif; color: #12384a; page-break-after: avoid; }
+      h1 { font-size: 17pt; margin: 22px 0 8px; } h2 { font-size: 14pt; margin: 20px 0 6px; border-bottom: 1px solid #d8dee6; padding-bottom: 3px; }
+      h3 { font-size: 12pt; margin: 16px 0 4px; } h4 { font-size: 11pt; margin: 12px 0 4px; }
+      p { margin: 0 0 10px; text-align: justify; } ul, ol { margin: 0 0 10px 22px; padding: 0; } li { margin: 3px 0; }
+      code { font-family: Consolas, monospace; font-size: 10pt; background: #f1f4f7; padding: 0 3px; }
+      hr { border: 0; border-top: 1px solid #d8dee6; margin: 18px 0; }
+      .turn { margin: 0 0 12px; page-break-inside: avoid; } .who { font-family: "Segoe UI", Helvetica, Arial, sans-serif; font-weight: 700; font-size: 9.5pt; color: #2a6f86; text-transform: uppercase; letter-spacing: .06em; }
+      .turn.user .who { color: #7a5c00; }
+      footer { margin-top: 28px; padding-top: 8px; border-top: 1px solid #d8dee6; font-family: "Segoe UI", Helvetica, Arial, sans-serif; font-size: 8.5pt; color: #8a919c; }
+    </style></head><body>
+      <header><div class="t">${esc(title)}</div><div class="s">${esc(subtitle)} · ${esc(date)}</div></header>
+      ${bodyHtml}
+      <footer>Made with ${esc(APP)} on this computer. AI-written content can contain mistakes; check important facts.</footer>
+    </body></html>`;
+  }
+
+  let docBusy = false;
+  async function makeDocument(kind, request) {
+    $("docMenu").classList.remove("open");
+    const chat = messages.filter((m) => m.role === "user" || m.role === "assistant");
+    const hasContent = chat.some((m) => m.role === "assistant");
+    if (!hasContent) { showError("There's nothing to save yet. Have a conversation first."); return; }
+    if (docBusy) return;
+    docBusy = true;
+    stopReply();
+    const myId = replyId;
+    let title, html;
+    try {
+      if (kind === "transcript") {
+        const first = chat.find((m) => m.role === "user");
+        title = (first ? first.content : "Conversation").replace(/\s+/g, " ").slice(0, 60);
+        const body = chat.map((m) => `<div class="turn ${m.role}"><div class="who">${m.role === "user" ? "You" : esc(APP)}</div>${mdToHtml(m.content)}</div>`).join("");
+        html = docPage(title, body, `Conversation with ${APP}`);
+      } else {
+        addNote("Writing it up as a document…");
+        setState("thinking", "Writing your document…");
+        if (ctx && settings.speak_replies !== false) queueSpeech("Okay, I'm writing that up as a document. This takes a moment.", myId);
+        const transcript = chat.filter((m) => !(request && m.content === request))
+          .map((m) => `${m.role === "user" ? "USER" : "ASSISTANT"}: ${m.content}`).join("\n\n");
+        const prompt = [
+          { role: "system", content: "You turn conversations into clean, well-organized written documents. Write in Markdown." },
+          { role: "user", content:
+            "Turn the information in the conversation below into a polished document.\n" +
+            (request ? `What the user asked for: "${request}"\n` : "") +
+            "Rules:\n- First line: '# ' followed by a short, specific title.\n- Then a one-paragraph introduction.\n" +
+            "- Then sections with '## ' headings (and '### ' subheadings where useful), written as clear paragraphs, with bullet lists only where they help.\n" +
+            "- Use ONLY facts stated in the conversation. Do not add new facts, dates or names. Leave out chit-chat and anything about saving files.\n" +
+            "- No preface or sign-off; output only the document.\n\nCONVERSATION:\n\n" + transcript },
+        ];
+        const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: prompt, model: settings.model, raw: true }) });
+        const reader = r.body.getReader(); const dec = new TextDecoder();
+        let buf = "", md = "";
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true }); let nl;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+            if (!line.trim()) continue;
+            const o = JSON.parse(line);
+            if (o.error) throw new Error(o.error);
+            if (o.t) { md += o.t; $("stateLabel").textContent = `Writing your document… ${md.split(/\s+/).length} words`; }
+          }
+        }
+        md = md.trim().replace(/^```(?:markdown|md)?\s*/i, "").replace(/```\s*$/, "");
+        const m = md.match(/^#\s+(.+)$/m);
+        title = m ? m[1].replace(/[*_`]/g, "").trim() : "Notes";
+        if (m) md = md.replace(m[0], "").trim();
+        html = docPage(title, mdToHtml(md), `Prepared by ${APP}`);
+      }
+      setState("thinking", "Saving the PDF…");
+      const r = await fetch("/api/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, html }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+      const ctype = r.headers.get("Content-Type") || "";
+      if (ctype.includes("application/json")) {
+        const j = await r.json();
+        const where = j.path.replace(/^.*[\\/](Documents[\\/])/i, "$1");
+        addNote(`Saved "${title}" ${j.kind === "pdf" ? "as a PDF" : "(open it and choose Print → Save as PDF)"} in ${where}`);
+        if (ctx && settings.speak_replies !== false) queueSpeech(`Done. I saved ${title} in your Documents folder and opened it.`, myId);
+      } else {
+        const blob = await r.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${title.replace(/[^\w\s-]/g, "").trim() || "document"}.${ctype.includes("pdf") ? "pdf" : "html"}`;
+        document.body.appendChild(a); a.click(); a.remove();
+        addNote(`Downloaded "${title}" to this device.`);
+      }
+    } catch (e) {
+      showError("Couldn't make the document: " + e.message);
+    } finally {
+      docBusy = false;
+      if (state === "thinking") setState(ctx ? "idle" : "off");
+    }
+  }
+
   $("newChat").onclick = () => { stopReply(); messages = []; saveHistory(); renderHistory(); setState(ctx ? "idle" : "off"); };
   $("modelSel").onchange = (e) => switchModel(e.target.value);
 

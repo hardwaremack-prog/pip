@@ -34,6 +34,15 @@
   <div class="top-actions">
     <button class="update-chip" id="updChip" style="display:none" title="A newer version is ready">Update available</button>
     <select id="modelSel" title="AI model"></select>
+    <div class="doc-wrap">
+      <button class="icon-btn" id="docBtn" title="Save as a document (PDF)">
+        <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>
+      </button>
+      <div class="doc-menu" id="docMenu">
+        <button id="docWrite"><b>Write it up as a document</b><span>A clean PDF with a title and headings, made from this chat</span></button>
+        <button id="docChat"><b>Save the conversation</b><span>The chat exactly as it happened, as a PDF</span></button>
+      </div>
+    </div>
     <button class="icon-btn" id="newChat" title="New chat">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
     </button>

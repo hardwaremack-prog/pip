@@ -1,3 +1,9 @@
+1.3.0  (October 22, 2026)
+- Real documents: say "make a PDF" (or tap the new document button) and it writes the
+  chat up as a clean PDF with a title and headings, saves it in Documents and opens it
+- "Save the conversation" keeps the chat exactly as it happened, as a PDF
+- More honest: it no longer claims to save, send or open files when it can't
+
 1.2.1  (October 22, 2026)
 - If Pip's files were updated while it was running, Pip now says to restart it
   instead of showing "not found"
