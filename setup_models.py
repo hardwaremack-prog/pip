@@ -35,8 +35,23 @@ def say(msg, color=""):
 
 
 def download(url, dest: Path):
+    """Download with a visible progress bar. Uses curl when present: it shows progress,
+    retries, and falls back from a stalled IPv6 connection to IPv4 by itself."""
     tmp = dest.with_suffix(dest.suffix + ".part")
-    with urllib.request.urlopen(url, timeout=60) as r, open(tmp, "wb") as f:
+    tmp.unlink(missing_ok=True)
+    curl = shutil.which("curl")
+    if curl:
+        for extra in ([], ["-4"]):   # second try forces IPv4 if the first one stalled
+            r = subprocess.run([curl, "-fL", "--retry", "3", "--retry-delay", "2",
+                                "--connect-timeout", "20", "--speed-limit", "1024", "--speed-time", "45",
+                                "--progress-bar", *extra, "-o", str(tmp), url])
+            if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+                tmp.replace(dest)
+                return
+            say("    (retrying" + (" over IPv4" if not extra else "") + ")", DIM)
+        raise RuntimeError("download failed - check the internet connection and run setup again")
+    print("    connecting ...", end="", flush=True)
+    with urllib.request.urlopen(url, timeout=30) as r, open(tmp, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         got = 0
         last = 0
@@ -46,11 +61,10 @@ def download(url, dest: Path):
                 break
             f.write(chunk)
             got += len(chunk)
-            if total and time.time() - last > 0.5:
+            if time.time() - last > 0.5:
                 last = time.time()
-                print(f"\r    {got / 1e6:6.1f} / {total / 1e6:.1f} MB", end="", flush=True)
-    if total:
-        print(f"\r    {got / 1e6:6.1f} / {total / 1e6:.1f} MB")
+                print(f"\r    {got / 1e6:6.1f}" + (f" / {total / 1e6:.1f}" if total else "") + " MB   ", end="", flush=True)
+    print(f"\r    {got / 1e6:6.1f} MB done      ")
     tmp.replace(dest)
 
 
