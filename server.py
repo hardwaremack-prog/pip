@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Offline voice chat server — shared by Halo Converse (AMD 395) and Pip (Pi 500).
+Offline voice chat server — shared by Halo Converse (AMD 395) and Pip (Pi 500 / Pi 4).
 
 Pipeline:  headset mic -> browser -> /api/stt (faster-whisper)
            text -> /api/chat (local Ollama or LM Studio, streamed)
@@ -27,6 +27,8 @@ import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from appconfig import load_config, board_name
+
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = HERE / "config.json"
 SETTINGS_PATH = HERE / "data" / "settings.json"
@@ -47,7 +49,7 @@ def load_json(path, default):
         return default
 
 
-CONFIG = load_json(CONFIG_PATH, {})
+CONFIG = load_config(HERE)   # config.json + this board's profile (profiles/)
 try:
     VERSION = (HERE / "VERSION").read_text(encoding="utf-8").strip()
 except OSError:
@@ -71,9 +73,19 @@ DEFAULTS = {
     "share_on_network": False,   # let other devices on the home network use it
     "share_port": 8443,          # HTTPS port for other devices (mic needs HTTPS)
     "unload_on_switch": True,    # free the old model's RAM when switching
+    "num_ctx": 0,                # model memory size; 0 = Ollama's default
 }
 for k, v in DEFAULTS.items():
     CONFIG.setdefault(k, v)
+# The "share on network" switch at the top of the app overrides config.json
+_saved_share = load_json(SETTINGS_PATH, {}).get("share_on_network")
+if isinstance(_saved_share, bool):
+    CONFIG["share_on_network"] = _saved_share
+
+
+def ollama_options():
+    n = int(CONFIG.get("num_ctx") or 0)
+    return {"options": {"num_ctx": n}} if n > 0 else {}
 
 # User-changed settings (from the gear menu) live in data/settings.json
 USER_KEYS = ["model", "voice", "speech_speed", "system_prompt", "mode",
@@ -314,7 +326,8 @@ def switch_model(new, old=None, is_host=True):
                 pass
         t0 = time.time()
         http_json(base + "/api/generate",
-                  {"model": new, "prompt": "", "keep_alive": "30m", "stream": False}, timeout=300)
+                  {"model": new, "prompt": "", "keep_alive": "30m", "stream": False, **ollama_options()},
+                  timeout=300)
         secs = round(time.time() - t0, 1)
     log(f"Switched model: {old} -> {new}" + (f" (loaded in {secs}s)" if secs is not None else ""))
     return {"model": new, "previous": old, "load_secs": secs}
@@ -328,7 +341,7 @@ def stream_chat(messages, model):
     else:
         url = CONFIG["ollama_url"].rstrip("/") + "/api/chat"
         body = {"model": model, "messages": messages, "stream": True,
-                "keep_alive": "30m"}
+                "keep_alive": "30m", **ollama_options()}
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
@@ -480,6 +493,11 @@ class Handler(BaseHTTPRequestHandler):
                 "version": VERSION,
                 "can_update": updates_supported(),
                 "share_error": NET["error"] if self.is_host else None,
+                "share_on": bool(CONFIG.get("share_on_network")),
+                "local_url": f"http://127.0.0.1:{int(CONFIG['port'])}/",
+                "hostname": socket.gethostname(),
+                "edition": CONFIG.get("edition", ""),
+                "board": BOARD,
             })
         if path == "/api/settings":
             return self._send(200, get_settings())
@@ -516,6 +534,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, pdf, "application/pdf",
                                       {"Content-Disposition": 'attachment; filename="document.pdf"'})
                 return self._send(200, req.get("html", ""), "text/html; charset=utf-8")
+            if path == "/api/share":
+                if not self.is_host:
+                    return self._send(403, {"error": "Only the main computer can change sharing"})
+                on = bool(json.loads(self._body() or b"{}").get("on"))
+                set_sharing(on)
+                return self._send(200, {"share_on": bool(CONFIG.get("share_on_network")),
+                                        "share_urls": NET["urls"], "share_error": NET["error"]})
             if path == "/api/update/check":
                 check_update(force=True)
                 return self._send(200, update_info())
@@ -594,7 +619,8 @@ class Handler(BaseHTTPRequestHandler):
 # --------------------------------------------------------------------------
 # Sharing on the home network
 # --------------------------------------------------------------------------
-NET = {"names": set(), "urls": [], "error": None}
+NET = {"names": set(), "urls": [], "error": None, "srv": None}
+BOARD = board_name()
 
 
 def is_ip(h):
@@ -692,11 +718,37 @@ def start_network_server():
         log(NET["error"])
         return
     NET["urls"] = [f"https://{i}:{port}/" for i in ips] + [f"https://{host}.local:{port}/"]
+    NET["srv"], NET["error"] = srv, None
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     log("Other devices on your network can use it at:")
     for u in NET["urls"]:
         log("   " + u)
     log("(The first visit shows a certificate warning: choose Advanced -> Continue.)")
+
+
+def stop_network_server():
+    srv = NET.get("srv")
+    NET.update(srv=None, urls=[], error=None)
+    if srv:
+        srv.shutdown()
+        srv.server_close()
+        log("Stopped sharing on the network.")
+
+
+def set_sharing(on: bool):
+    """The switch at the top of the app: start/stop sharing now and remember it."""
+    CONFIG["share_on_network"] = on
+    cur = load_json(SETTINGS_PATH, {})
+    cur["share_on_network"] = on
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PATH.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+    if on and not NET.get("srv"):
+        NET["error"] = None
+        start_network_server()
+        if NET["error"]:
+            CONFIG["share_on_network"] = False
+    elif not on:
+        stop_network_server()
 
 
 # --------------------------------------------------------------------------
@@ -912,7 +964,8 @@ def main():
         log(f"{CONFIG['app_name']} already seems to be running - opening it.")
         open_app_window(url)
         return
-    log(f"{CONFIG['app_name']} {VERSION} running at {url}")
+    log(f"{CONFIG['app_name']} {VERSION}" + (f" ({CONFIG['edition']} edition)" if CONFIG.get("edition") else "")
+        + f" running at {url}")
     if CONFIG.get("update_repo"):
         threading.Thread(target=check_update, daemon=True).start()
     if CONFIG.get("share_on_network"):

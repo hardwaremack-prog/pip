@@ -16,7 +16,9 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CONFIG = json.loads((HERE / "config.json").read_text(encoding="utf-8"))
+sys.path.insert(0, str(HERE))
+from appconfig import load_config  # noqa: E402
+CONFIG = load_config(HERE)   # includes the Pi 4 profile on small Pis
 VOICES_DIR = HERE / "models" / "voices"
 WHISPER_DIR = HERE / "models" / "whisper"
 
@@ -149,6 +151,8 @@ def get_llms(check=False):
 def main():
     check = "--check" in sys.argv
     say(f"\n{CONFIG['app_name']} — {'checking' if check else 'getting'} offline parts\n")
+    if CONFIG.get("edition"):
+        say(f"Using the {CONFIG['edition']} setup (smaller, quicker parts for this board).\n", DIM)
     say("Voices (Piper):")
     v = get_voices(check)
     say("\nEars (Whisper):")

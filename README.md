@@ -1,6 +1,6 @@
 # Pip
 
-A cheerful offline voice assistant for the Raspberry Pi 500. Talk through a headset; Pip listens, thinks and answers out loud, all on the Pi.
+A cheerful offline voice assistant for the Raspberry Pi 500 and Raspberry Pi 4 (4 GB). Talk through a headset; Pip listens, thinks and answers out loud, all on the Pi.
 
 ![Pip](screenshot.png)
 
@@ -9,13 +9,22 @@ A cheerful offline voice assistant for the Raspberry Pi 500. Talk through a head
 - **Voice:** Piper (Amy, Joe, Alba)
 - **Push to talk / Hands-free** toggle, talk-over-to-interrupt, headset picker, editable personality
 
+## Raspberry Pi 4 (4 GB)
+Same install. On a 4 GB Pi 4 (or Pi 400) Pip notices the board and uses its slim setup (`profiles/pi4.json`):
+`llama3.2:1b` (plus `qwen2.5:0.5b` for the quickest replies), Whisper `tiny.en`, the Amy *low* voice and a smaller memory window.
+The installer also raises swap to 2 GB if it's lower. Check what it picked with `python3 appconfig.py`.
+
+## Web address
+The address is shown at the top of the window with Copy buttons. Flip **Share on Wi-Fi** to get an address
+other devices on your home network can open (the first visit shows a certificate warning; choose Advanced → Continue).
+
 ## Install (64-bit Raspberry Pi OS)
 ```bash
 git clone https://github.com/hardwaremack-prog/pip.git ~/Pip
 cd ~/Pip
 ./install.sh
 ```
-Needs internet once (~3.5 GB). Then use the **Pip** icon on the desktop or in the menu.
+Needs internet once (~3.5 GB on a Pi 500, ~1.6 GB on a Pi 4). Then use the **Pip** icon on the desktop or in the menu.
 
 ## Updating
 Pip tells you when a new version is out. Update with any of:

@@ -84,7 +84,31 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 kbd { font-family: inherit; font-size: .8em; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: var(--panel); }
 
 /* ---------- Header ---------- */
-.top { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.top { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+/* Address bar */
+.addr { order: -1; flex-basis: 100%; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.addr-field { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 260px; max-width: 520px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 4px 4px 4px 12px; }
+.addr-field.off { opacity: .6; }
+.addr-ico { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.addr-label { font-size: 12px; color: var(--muted); flex: none; }
+.addr-url { font-family: ui-monospace, "DejaVu Sans Mono", Consolas, monospace; font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; cursor: copy; user-select: all; }
+.addr-field.off .addr-url { font-family: var(--font); font-weight: 400; color: var(--muted); cursor: default; user-select: none; }
+.addr-copy { flex: none; font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 99px; border: 0; cursor: pointer;
+  background: var(--panel-2); color: var(--text); }
+.addr-copy:hover { background: var(--accent); color: var(--accent-ink); }
+.addr-copy.done { background: var(--ok); color: var(--accent-ink); }
+.addr-field.off .addr-copy { display: none; }
+.addr-switch { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; flex: none; }
+.addr-switch input { position: absolute; opacity: 0; pointer-events: none; }
+.addr-switch .sw { width: 34px; height: 20px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); position: relative; transition: background .15s; }
+.addr-switch .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+.addr-switch input:checked + .sw { background: var(--accent); border-color: var(--accent); }
+.addr-switch input:checked + .sw::after { transform: translateX(14px); background: var(--accent-ink); }
+.addr-switch input:focus-visible + .sw { outline: 2px solid var(--accent); outline-offset: 2px; }
+.addr-switch.busy { opacity: .5; pointer-events: none; }
+.edition { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: .02em; font-size: 18px; }
 .brand-mark { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--accent); box-shadow: 0 0 12px var(--accent); }
 .theme-pip .brand-mark { border: 0; background: var(--accent); box-shadow: none; border-radius: 50% 50% 46% 46%; }
@@ -269,6 +293,7 @@ select { background: var(--panel); border: 1px solid var(--line); border-radius:
   .transcript { border-left: 0; border-top: 1px solid var(--line); padding: 14px; }
   .dock { grid-template-columns: 1fr 1fr; grid-template-areas: "mode talk" "type type" "hint hint"; }
   .health { display: none; }
+  .addr-field { flex-basis: 100%; max-width: none; }
   .talk-btn { min-width: 0; padding: 12px 14px; white-space: nowrap; font-size: 15px; }
   .mode-toggle button { padding: 8px 11px; font-size: 13px; }
 }

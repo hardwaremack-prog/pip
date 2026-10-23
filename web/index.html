@@ -21,9 +21,28 @@
 </div>
 
 <header class="top">
+  <!-- Address bar: where to reach the app, always visible -->
+  <div class="addr" id="addrBar">
+    <div class="addr-field" id="addrLocalField">
+      <svg class="addr-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+      <span class="addr-label" id="addrLocalLabel">This Pi</span>
+      <span class="addr-url" id="addrLocal" title="Click to copy">http://127.0.0.1/</span>
+      <button class="addr-copy" id="addrLocalCopy" title="Copy this address">Copy</button>
+    </div>
+    <div class="addr-field" id="addrNetField">
+      <svg class="addr-ico" viewBox="0 0 24 24"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/></svg>
+      <span class="addr-label">Wi-Fi</span>
+      <span class="addr-url" id="addrNet" title="Click to copy">off</span>
+      <button class="addr-copy" id="addrNetCopy" title="Copy this address">Copy</button>
+    </div>
+    <label class="addr-switch" id="shareSwitch" title="Let phones, tablets and other computers on your home network use it">
+      <input type="checkbox" id="shareToggle"><span class="sw"></span><span>Share on Wi-Fi</span>
+    </label>
+  </div>
   <div class="brand">
     <span class="brand-mark"></span>
     <span class="brand-name">{{APP_NAME}}</span>
+    <span class="edition" id="edition" style="display:none"></span>
   </div>
   <div class="health" id="health">
     <span class="dot" id="hBrain" title="AI model">Brain</span>

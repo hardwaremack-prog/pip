@@ -122,6 +122,7 @@
       `<option value="${esc(v)}" ${v === settings.voice ? "selected" : ""}>${esc(prettyVoice(v))}</option>`).join("");
     if (!status.version && !window.__staleWarned) { window.__staleWarned = true; showError(STALE_MSG); }
     renderShare();
+    renderAddress();
     renderUpdate(status);
     if (startVersion && status.version && status.version !== startVersion) {
       stopReply(); location.reload(); return;   // updated in the background
@@ -227,12 +228,66 @@
     }, 1200);
   };
 
+  // ---------------- Address bar ----------------
+  function copyText(text, btn) {
+    const done = () => { if (!btn) return; const t = btn.textContent; btn.textContent = "Copied"; btn.classList.add("done");
+      setTimeout(() => { btn.textContent = t === "Copied" ? "Copy" : t; btn.classList.remove("done"); }, 1400); };
+    const fallback = () => {
+      const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch {} ta.remove(); done();
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  }
+
+  function renderAddress() {
+    const onPi = /raspberry pi/i.test(status.board || "");
+    if (!isHost) {
+      // Another device: show the address it's using now
+      $("addrLocalLabel").textContent = "Address";
+      $("addrLocal").textContent = location.origin + "/";
+      $("addrNetField").style.display = "none";
+      $("shareSwitch").style.display = "none";
+    } else {
+      $("addrLocalLabel").textContent = onPi ? "This Pi" : "This computer";
+      $("addrLocal").textContent = status.local_url || location.origin + "/";
+      const urls = status.share_urls || [];
+      const on = !!status.share_on && urls.length > 0;
+      $("addrNetField").classList.toggle("off", !on);
+      $("addrNet").textContent = on ? urls[0] : (status.share_error ? "couldn't start" : "off \u2014 switch on to use it from a phone");
+      $("addrNet").title = on ? "Also works as: " + urls.slice(1).join("  ·  ") + "\nClick to copy" : (status.share_error || "");
+      $("shareToggle").checked = on;
+    }
+    const ed = status.edition || "";
+    $("edition").style.display = ed ? "" : "none";
+    $("edition").textContent = ed;
+    $("edition").title = ed ? `${APP} ${ed} edition: smaller, quicker parts for this board` : "";
+  }
+
+  $("addrLocal").addEventListener("click", () => copyText($("addrLocal").textContent, $("addrLocalCopy")));
+  $("addrLocalCopy").addEventListener("click", () => copyText($("addrLocal").textContent, $("addrLocalCopy")));
+  const copyNet = () => { if (!$("addrNetField").classList.contains("off")) copyText($("addrNet").textContent, $("addrNetCopy")); };
+  $("addrNet").addEventListener("click", copyNet);
+  $("addrNetCopy").addEventListener("click", copyNet);
+  $("shareToggle").addEventListener("change", async (e) => {
+    const sw = $("shareSwitch"); sw.classList.add("busy");
+    try {
+      const r = await api("/api/share", { on: e.target.checked });
+      Object.assign(status, r);
+      if (r.share_error) showError(r.share_error);
+      else if (r.share_on) addNote("Sharing on your Wi-Fi. Open the Wi-Fi address on a phone or another computer.");
+      else { addNote("Stopped sharing on the network."); $("hNet").style.display = "none"; }
+    } catch (err) { showError("Couldn't change sharing: " + err.message); }
+    sw.classList.remove("busy");
+    renderShare(); renderAddress();
+  });
+
   function renderShare() {
     const box = $("shareBox");
     $("shareSection").style.display = (isHost && !(status.share_urls || []).length && !status.share_error) ? "none" : "";
     if (!isHost) { box.innerHTML = `<p class="fine">You're connected over your home network. Your chats and settings stay in this browser.</p>`; return; }
     if (status.share_error) { box.innerHTML = `<p class="fine">${esc(status.share_error)}</p>`; return; }
-    if (!(status.share_urls || []).length) { box.innerHTML = `<p class="fine">Network sharing is off. Turn it on with "share_on_network" in config.json.</p>`; return; }
+    if (!(status.share_urls || []).length) { box.innerHTML = `<p class="fine">Network sharing is off. Turn it on with the Share on Wi-Fi switch at the top.</p>`; return; }
     box.innerHTML = `<p class="fine">On a phone, tablet or other computer on your Wi-Fi, open:</p>` +
       status.share_urls.map((u) => `<div class="share-url">${esc(u)}</div>`).join("") +
       `<p class="fine">The first time, the browser warns about the certificate. Choose <em>Advanced → Continue/Proceed</em> (on iPhone: <em>Show Details → visit this website</em>). That's expected: it's Halo's own private certificate. Each person gets their own chat.</p>`;

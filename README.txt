@@ -1,5 +1,5 @@
-PIP  -  offline voice chat for your Raspberry Pi 500
-=====================================================
+PIP  -  offline voice chat for your Raspberry Pi 500 and Raspberry Pi 4
+========================================================================
 
 A cheerful little voice assistant that lives on your Pi. Talk through your
 headset; Pip listens, thinks and answers, all on the Pi with no internet.
@@ -7,6 +7,11 @@ headset; Pip listens, thinks and answers, all on the Pi with no internet.
   Ears   : Whisper (base.en)
   Brain  : Ollama with llama3.2:3b (llama3.2:1b included for quicker replies)
   Voice  : Piper (Amy, Joe and Alba voices)
+
+  On a Raspberry Pi 4 (4 GB) Pip sets itself up smaller and quicker:
+  Ears: Whisper tiny.en   Brain: llama3.2:1b (qwen2.5:0.5b for fastest)
+  Voice: Amy (low) by default, Amy and Joe (medium) to choose from.
+  The installer raises swap to 2 GB if needed so the model has room.
 
 Needs 64-bit Raspberry Pi OS. Plug in your USB headset before starting.
 
@@ -31,6 +36,10 @@ Double-click Pip. Click "Start talking" and allow the microphone.
   Hands-free   : just talk; Pip answers when you pause
   Esc          : stop Pip mid-sentence
   Typing       : the text box works too
+
+The web address is shown at the top with a Copy button. Flip
+"Share on Wi-Fi" to use Pip from a phone or another computer on your
+home network (first visit: choose Advanced -> Continue on the warning).
 
 The gear menu lets you pick the headset mic and output, voice, speed,
 Hands-free sensitivity and Pip's personality.

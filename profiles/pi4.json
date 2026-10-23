@@ -1,0 +1,13 @@
+{
+  "_about": "Slim setup for a Raspberry Pi 4 (or 400) with 4 GB of RAM. Loaded automatically on those boards.",
+  "edition": "Pi 4",
+  "model": "llama3.2:1b",
+  "models_to_install": ["llama3.2:1b", "qwen2.5:0.5b"],
+  "whisper_model": "tiny.en",
+  "whisper_threads": 4,
+  "voice": "en_US-amy-low",
+  "voices_to_install": ["en_US-amy-low", "en_US-amy-medium", "en_US-joe-medium"],
+  "num_ctx": 2048,
+  "max_history": 8,
+  "system_prompt": "You are Pip, a cheerful, friendly little voice assistant who lives on Chuck's Raspberry Pi 4. You are curious, kind and a bit playful. Keep answers short and easy to listen to, usually one to three sentences. If you're not sure about something, say so honestly."
+}
