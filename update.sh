@@ -46,8 +46,14 @@ say "Pip $OLD in $DIR"
 
 # Is Pip running from this folder right now?
 pip_pids() {
-  for p in $(pgrep -f "python.* server.py" || true); do
-    if [ "$(readlink "/proc/$p/cwd" 2>/dev/null)" = "$DIR" ]; then echo "$p"; fi
+  # Only a Python process running exactly "server.py" from this folder
+  for p in $(pgrep -f "server\.py" || true); do
+    [ "$p" = "$$" ] && continue
+    args="$(tr '\0' '\n' < "/proc/$p/cmdline" 2>/dev/null || true)"
+    exe="$(basename "$(printf '%s\n' "$args" | sed -n 1p)")"
+    arg1="$(printf '%s\n' "$args" | sed -n 2p)"
+    case "$exe" in python*) ;; *) continue ;; esac
+    if [ "$arg1" = "server.py" ] && [ "$(readlink "/proc/$p/cwd" 2>/dev/null)" = "$DIR" ]; then echo "$p"; fi
   done
   return 0
 }
